@@ -397,23 +397,15 @@ Questo progetto è rilasciato sotto licenza **MIT**.
 
 ## 👥 Autori
 
-- **Valerio** - [@yourusername](https://github.com/yourusername)
+- **team Metamia** 
 
 ---
 
-## 🙏 Ringraziamenti
-
-- **Gentilini** - Caso d'uso e dati
-- **OpenAI** - API GPT-4
-- **scikit-learn** - Algoritmi ML
-- **Google Trends** - Dati mercato
-
----
 
 <div align="center">
 
 **[⬆ Torna all'inizio](#-ai-powered-demand-forecasting-system)**
 
-Made with ❤️ and 🤖 by Valerio
+Made with ❤️ and 🤖 by Metamia
 
 </div>
