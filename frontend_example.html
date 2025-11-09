@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demand Forecasting Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .chat-container {
+            padding: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            background: #e3f2fd;
+            margin-left: 50px;
+        }
+
+        .message.bot {
+            background: #f5f5f5;
+            margin-right: 50px;
+        }
+
+        .message.query {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+            margin-right: 50px;
+        }
+
+        .message-label {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .message-content {
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .predictions {
+            margin-top: 15px;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .prediction-item {
+            padding: 10px;
+            margin: 8px 0;
+            background: #fafafa;
+            border-radius: 5px;
+            border-left: 3px solid #667eea;
+        }
+
+        .prediction-item strong {
+            color: #667eea;
+        }
+
+        .input-container {
+            padding: 20px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #messageInput:focus {
+            border-color: #667eea;
+        }
+
+        #sendButton {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #sendButton:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        #sendButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔮 Demand Forecasting Assistant</h1>
+            <p>Chiedi previsioni di vendita o chatta normalmente</p>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="message bot">
+                <div class="message-label">🤖 Assistente</div>
+                <div class="message-content">Ciao! Sono il tuo assistente per il demand forecasting.
+
+Puoi chiedermi previsioni specificando:
+• Prodotto (es: 40000)
+• Cliente (es: 10000018)
+• Periodo (es: gennaio 2024)
+
+Oppure chatta normalmente con me!</div>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <input
+                type="text"
+                id="messageInput"
+                placeholder="Scrivi un messaggio..."
+                autocomplete="off"
+            >
+            <button id="sendButton">Invia</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api/chat';
+        const chatContainer = document.getElementById('chatContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+
+        // Invia messaggio quando si preme Invio
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Invia messaggio quando si clicca sul bottone
+        sendButton.addEventListener('click', sendMessage);
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+
+            if (!message) return;
+
+            // Disabilita input durante l'invio
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+
+            // Mostra messaggio dell'utente
+            addMessage(message, 'user');
+            messageInput.value = '';
+
+            // Mostra loading
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading';
+            loadingDiv.textContent = '⏳ Elaborazione in corso...';
+            loadingDiv.id = 'loading';
+            chatContainer.appendChild(loadingDiv);
+            scrollToBottom();
+
+            try {
+                // Chiama l'API
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                const data = await response.json();
+
+                // Rimuovi loading
+                document.getElementById('loading')?.remove();
+
+                // Gestisci risposta
+                if (data.tipo === 'chat') {
+                    addMessage(data.risposta, 'bot');
+                }
+                else if (data.tipo === 'query') {
+                    addQueryResponse(data);
+                }
+                else if (data.tipo === 'error') {
+                    addMessage(`❌ Errore: ${data.error || data.errore}`, 'bot');
+                }
+
+            } catch (error) {
+                document.getElementById('loading')?.remove();
+                addMessage(`❌ Errore di connessione: ${error.message}`, 'bot');
+                console.error('Errore:', error);
+            } finally {
+                // Riabilita input
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                messageInput.focus();
+            }
+        }
+
+        function addMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+
+            const label = document.createElement('div');
+            label.className = 'message-label';
+            label.textContent = type === 'user' ? '👤 Tu' : '🤖 Assistente';
+
+            const content = document.createElement('div');
+            content.className = 'message-content';
+            content.textContent = text;
+
+            messageDiv.appendChild(label);
+            messageDiv.appendChild(content);
+            chatContainer.appendChild(messageDiv);
+
+            scrollToBottom();
+        }
+
+        function addQueryResponse(data) {
+            // 1. Mostra la risposta in linguaggio naturale
+            if (data.risposta) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message bot';
+
+                const label = document.createElement('div');
+                label.className = 'message-label';
+                label.textContent = '🤖 Assistente';
+
+                const content = document.createElement('div');
+                content.className = 'message-content';
+                content.textContent = data.risposta;
+
+                messageDiv.appendChild(label);
+                messageDiv.appendChild(content);
+                chatContainer.appendChild(messageDiv);
+            }
+
+            // 2. Mostra i dettagli tecnici (opzionale)
+            if (data.predizioni && data.predizioni.length > 0) {
+                const detailDiv = document.createElement('div');
+                detailDiv.className = 'message query';
+
+                const label = document.createElement('div');
+                label.className = 'message-label';
+                label.textContent = '📊 Dettagli Tecnici';
+
+                const predsDiv = document.createElement('div');
+                predsDiv.className = 'predictions';
+
+                data.predizioni.forEach((pred, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'prediction-item';
+
+                    const predizione = pred.predizione || {};
+                    const kg = predizione.kg_predetti ? predizione.kg_predetti.toFixed(2) : 'N/A';
+                    const fonte = pred.fonte === 'csv' ? '📁 Dati storici (CSV)' : '🤖 Generato con ML';
+                    const confidenza = predizione.confidenza ? `${(predizione.confidenza * 100).toFixed(0)}%` : 'N/A';
+
+                    item.innerHTML = `
+                        <div><strong>${index + 1}. Prodotto ${pred.prodotto}</strong> × <strong>Cliente ${pred.cliente}</strong></div>
+                        <div style="margin-top: 5px; font-size: 14px;">
+                            📅 Periodo: ${pred.periodo.mese}/${pred.periodo.anno}<br>
+                            📦 Kg previsti: <strong style="color: #667eea;">${kg} kg</strong><br>
+                            🔍 Fonte: ${fonte}
+                            ${predizione.confidenza ? `<br>✅ Confidenza: ${confidenza}` : ''}
+                        </div>
+                    `;
+                    predsDiv.appendChild(item);
+                });
+
+                detailDiv.appendChild(label);
+                detailDiv.appendChild(predsDiv);
+                chatContainer.appendChild(detailDiv);
+            }
+
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Focus iniziale sull'input
+        messageInput.focus();
+    </script>
+</body>
+</html>

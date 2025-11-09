@@ -1,0 +1,29 @@
+# =============================================================================
+# REQUIREMENTS.TXT - Demand Forecasting Backend
+# Versioni testate e funzionanti - NON modificare le versioni critiche!
+# =============================================================================
+
+# Flask e Web
+flask==3.0.0
+flask-cors==4.0.0
+werkzeug==3.0.1
+
+# OpenAI
+openai==1.54.4
+
+# Data Science & ML (VERSIONI CRITICHE - Non cambiare!)
+pandas==2.1.4
+numpy==1.26.4
+scikit-learn==1.3.2
+joblib==1.3.2
+
+# Google Trends
+pytrends==4.9.2
+
+# Utilities
+python-dotenv==1.0.0
+
+# Dependencies (installate automaticamente ma listate per reference)
+# requests>=2.31.0
+# urllib3>=2.0.0
+# certifi>=2023.7.22
