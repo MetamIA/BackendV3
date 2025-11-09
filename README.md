@@ -1,4 +1,4 @@
-# 🔮 AI-Powered Demand Forecasting System
+# 🔮 LeenO
 
 > Sistema intelligente di previsione della domanda con chatbot conversazionale, Machine Learning e analisi Google Trends.
 
