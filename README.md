@@ -1,6 +1,6 @@
 # 🔮 AI-Powered Demand Forecasting System
 
-> Sistema intelligente di previsione della domanda con chatbot conversazionale, Machine Learning e analisi Google Trends per Gentilini.
+> Sistema intelligente di previsione della domanda con chatbot conversazionale, Machine Learning e analisi Google Trends.
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.0.0-green.svg)](https://flask.palletsprojects.com/)
