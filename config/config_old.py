@@ -32,5 +32,9 @@ FLASK_DEBUG = os.getenv("FLASK_DEBUG", "True").lower() == "true"
 PREDICTION_CONFIDENCE_THRESHOLD = 0.7  # Soglia di confidenza minima
 CACHE_PREDICTIONS = True  # Cache predizioni in memoria
 
+# Google Trends
+USE_GOOGLE_TRENDS = True  # Abilita analisi Google Trends
+TRENDS_TIMEOUT = 10  # Timeout in secondi per richieste trends
+
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

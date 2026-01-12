@@ -4,8 +4,12 @@ Flask app per il backend del demand forecasting
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
 import os
 from query_parser import QueryParser
+
+load_dotenv()
+
 
 app = Flask(__name__)
 CORS(app)  # Abilita CORS per permettere richieste dal frontend
@@ -22,12 +26,12 @@ parser = QueryParser(API_KEY)
 def chat():
     """
     Endpoint per processare i messaggi dell'utente
-    
+
     Expected JSON:
     {
         "message": "Il messaggio dell'utente"
     }
-    
+
     Returns JSON con:
     - tipo: "chat" o "query"
     - dati: informazioni estratte (per query)
@@ -37,19 +41,19 @@ def chat():
     try:
         # Ottieni il messaggio dal body della richiesta
         data = request.get_json()
-        
+
         if not data or 'message' not in data:
             return jsonify({
                 "error": "Campo 'message' mancante nel body della richiesta"
             }), 400
-        
+
         user_message = data['message']
-        
+
         # Processa il messaggio
         result = parser.parse_message(user_message)
-        
+
         return jsonify(result), 200
-        
+
     except Exception as e:
         return jsonify({
             "error": str(e),

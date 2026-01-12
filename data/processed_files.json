@@ -1,0 +1,22 @@
+{
+  "gentilini codice etico.pdf": {
+    "hash": "995d17ec2d1d001794e285017453b68f",
+    "path": "C:\\Users\\vlrbr\\Desktop\\backenv3\\demand-forecasting-backend\\data\\documents\\gentilini codice etico.pdf",
+    "processed_at": "2025-12-14T18:50:24.837993",
+    "metadata": {
+      "file_name": "gentilini codice etico.pdf",
+      "file_size": 326010,
+      "num_images": 0
+    }
+  },
+  "gentilini ingredienti.pdf": {
+    "hash": "6e4dbad3d75fdf77698205f6aff8a877",
+    "path": "C:\\Users\\vlrbr\\Desktop\\backenv3\\demand-forecasting-backend\\data\\documents\\gentilini ingredienti.pdf",
+    "processed_at": "2025-12-14T18:50:29.932407",
+    "metadata": {
+      "file_name": "gentilini ingredienti.pdf",
+      "file_size": 1603794,
+      "num_images": 0
+    }
+  }
+}

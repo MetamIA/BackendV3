@@ -36,5 +36,12 @@ CACHE_PREDICTIONS = True  # Cache predizioni in memoria
 USE_GOOGLE_TRENDS = True  # Abilita analisi Google Trends
 TRENDS_TIMEOUT = 10  # Timeout in secondi per richieste trends
 
+# RAG System (Modulo 4)
+USE_RAG_SYSTEM = True  # Abilita/disabilita RAG System
+RAG_DOCUMENTS_DIR = str(DATA_DIR / "documents")  # Cartella documenti aziendali
+RAG_N_RESULTS = 3  # Numero di risultati da recuperare per query
+RAG_CHUNK_SIZE = 500  # Dimensione chunk per testo
+RAG_CHUNK_OVERLAP = 50  # Overlap tra chunk
+
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

@@ -17,9 +17,13 @@ from config.config import (
     OPENAI_API_KEY, 
     OPENAI_MODEL_RESPONSE,
     PREDICTIONS_CSV,
-    CACHE_PREDICTIONS
+    CACHE_PREDICTIONS,
+    USE_RAG_SYSTEM,
+    RAG_DOCUMENTS_DIR
 )
 from modules.predictor import MLPredictor
+from modules.trends_analyzer import TrendsAnalyzer
+from modules.rag_system import RAGSystem
 
 
 class PredictionManager:
@@ -47,6 +51,21 @@ class PredictionManager:
         
         # Carica il CSV se esiste
         self._load_predictions_csv()
+        
+        # Inizializza Trends Analyzer
+        self.trends_analyzer = TrendsAnalyzer(self.df_predictions, api_key)
+        
+        # Inizializza RAG System (opzionale)
+        self.rag_system = None
+        if USE_RAG_SYSTEM:
+            try:
+                self.rag_system = RAGSystem(api_key, RAG_DOCUMENTS_DIR)
+                if self.rag_system.available:
+                    # Indicizza documenti al primo avvio
+                    self.rag_system.ingest_documents()
+            except Exception as e:
+                print(f"⚠️  RAG System non disponibile: {e}")
+                self.rag_system = None
     
     def _load_predictions_csv(self):
         """Carica il CSV delle predizioni"""
@@ -64,13 +83,15 @@ class PredictionManager:
     
     def process_query_combinations(
         self, 
-        query_combinations: List[Dict]
+        query_combinations: List[Dict],
+        use_trends: bool = True
     ) -> Dict:
         """
         Processa le query combinations del Modulo 1
         
         Args:
             query_combinations: Lista di dict con {prodotto, cliente, periodo}
+            use_trends: Se True, analizza anche Google Trends
             
         Returns:
             Dict con risultati e risposta in linguaggio naturale
@@ -89,11 +110,14 @@ class PredictionManager:
             )
             
             if predizione:
+                # Pulisci NaN dal dict predizione
+                predizione_clean = self._clean_nan(predizione)
+                
                 risultati.append({
                     'prodotto': prodotto,
                     'cliente': cliente,
                     'periodo': {'mese': mese, 'anno': anno},
-                    'predizione': predizione,
+                    'predizione': predizione_clean,
                     'fonte': fonte  # 'csv' o 'ml_model'
                 })
             else:
@@ -104,15 +128,73 @@ class PredictionManager:
                     'errore': 'Predizione non disponibile'
                 })
         
-        # Genera risposta in linguaggio naturale
-        risposta_naturale = self._generate_natural_response(risultati)
+        # Analizza Google Trends se richiesto
+        trends_data = None
+        if use_trends and len(query_combinations) > 0:
+            # Estrai prodotti unici e periodo
+            prodotti_unici = list(set([str(c['prodotto']) for c in query_combinations]))
+            periodo = query_combinations[0]['periodo']  # Usa il primo periodo
+            
+            print(f"\n🔍 Analizzando Google Trends per {len(prodotti_unici)} prodotto/i...")
+            try:
+                trends_data = self.trends_analyzer.analyze_products_trends(
+                    prodotti_unici, 
+                    periodo
+                )
+            except Exception as e:
+                print(f"⚠️  Errore analisi trends: {e}")
+                trends_data = None
+        
+        # Query RAG System per documenti aziendali
+        rag_data = None
+        if self.rag_system and self.rag_system.available:
+            print(f"\n📚 Ricerca in documenti aziendali...")
+            try:
+                # Crea query per RAG basata su prodotti
+                prodotti_unici = list(set([str(c['prodotto']) for c in query_combinations]))
+                rag_query = f"Informazioni su prodotti {', '.join(prodotti_unici)}"
+                
+                rag_data = self.rag_system.query_documents(rag_query, n_results=3)
+                if rag_data and rag_data['sources']:
+                    print(f"  ✓ Trovate {rag_data['n_chunks']} informazioni in {len(rag_data['sources'])} documenti")
+            except Exception as e:
+                print(f"⚠️  Errore query RAG: {e}")
+                rag_data = None
+        
+        # Genera risposta in linguaggio naturale (con trends e RAG se disponibili)
+        risposta_naturale = self._generate_natural_response(risultati, trends_data, rag_data)
         
         return {
             'risultati': risultati,
             'num_predizioni': len(risultati),
+            'trends_data': trends_data,
+            'rag_data': rag_data,
             'risposta': risposta_naturale,
             'timestamp': datetime.now().isoformat()
         }
+    
+    def _clean_nan(self, obj):
+        """
+        Rimuove NaN da dict/list ricorsivamente, sostituendo con None
+        
+        Args:
+            obj: Dict, list o valore da pulire
+            
+        Returns:
+            Oggetto pulito senza NaN
+        """
+        import math
+        
+        if isinstance(obj, dict):
+            return {k: self._clean_nan(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_nan(item) for item in obj]
+        elif isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return None
+            return obj
+        else:
+            return obj
     
     def _get_or_create_prediction(
         self,
@@ -201,15 +283,34 @@ class PredictionManager:
             if len(risultato) > 0:
                 row = risultato.iloc[0]
                 
+                # Estrai valori con gestione NaN
+                kg_predetti = row.get('Kg_Venduti_Predetti')
+                if pd.notna(kg_predetti):
+                    kg_predetti = float(kg_predetti)
+                else:
+                    kg_predetti = None
+                
+                desc_prodotto = row.get('Descrizione_Prodotto', 'N/A')
+                if pd.isna(desc_prodotto):
+                    desc_prodotto = 'N/A'
+                
+                desc_cliente = row.get('Descrizione_Cliente', 'N/A')
+                if pd.isna(desc_cliente):
+                    desc_cliente = 'N/A'
+                
+                kg_reali = None
+                if 'Kg_Venduti_Reali' in row and pd.notna(row['Kg_Venduti_Reali']):
+                    kg_reali = float(row['Kg_Venduti_Reali'])
+                
                 return {
                     'prodotto': str(row['Prodotto']),
                     'cliente': str(row['Cliente']),
                     'anno': int(row['Esercizio']),
                     'mese': int(row['Periodo']),
-                    'kg_predetti': float(row['Kg_Venduti_Predetti']),
-                    'descrizione_prodotto': row.get('Descrizione_Prodotto', 'N/A'),
-                    'descrizione_cliente': row.get('Descrizione_Cliente', 'N/A'),
-                    'kg_reali': float(row['Kg_Venduti_Reali']) if 'Kg_Venduti_Reali' in row and pd.notna(row['Kg_Venduti_Reali']) else None,
+                    'kg_predetti': kg_predetti,
+                    'descrizione_prodotto': desc_prodotto,
+                    'descrizione_cliente': desc_cliente,
+                    'kg_reali': kg_reali,
                     'fonte': 'csv'
                 }
             
@@ -260,39 +361,75 @@ class PredictionManager:
         except Exception as e:
             print(f"❌ Errore salvataggio CSV: {e}")
     
-    def _generate_natural_response(self, risultati: List[Dict]) -> str:
+    def _generate_natural_response(
+        self, 
+        risultati: List[Dict], 
+        trends_data: Optional[Dict] = None,
+        rag_data: Optional[Dict] = None
+    ) -> str:
         """
         Genera una risposta in linguaggio naturale usando GPT
         
         Args:
             risultati: Lista di risultati delle predizioni
+            trends_data: Dati Google Trends (opzionale)
+            rag_data: Dati da RAG System (opzionale)
             
         Returns:
             Risposta in linguaggio naturale
         """
         try:
             # Prepara il contesto per GPT
-            contesto = self._prepare_context_for_gpt(risultati)
+            contesto_predizioni = self._prepare_context_for_gpt(risultati)
             
-            system_prompt = """Sei un assistente esperto di demand forecasting.
-Il tuo compito è presentare le predizioni di vendita in modo chiaro e professionale.
+            # Prepara contesto trends se disponibile
+            contesto_trends = ""
+            if trends_data:
+                contesto_trends = self.trends_analyzer.format_trends_for_llm(trends_data)
+            
+            # Prepara contesto RAG se disponibile
+            contesto_rag = ""
+            if rag_data and rag_data.get('context'):
+                contesto_rag = f"\n📚 INFORMAZIONI DA DOCUMENTI AZIENDALI:\n{rag_data['context']}"
+            
+            system_prompt = """Sei un assistente esperto di demand forecasting per Gentilini, azienda italiana di biscotti premium.
+
+Il tuo compito è presentare le predizioni di vendita in modo chiaro e professionale, 
+integrando anche fattori esogeni da Google Trends e informazioni da documenti aziendali quando disponibili.
 
 Linee guida:
 - Usa un tono professionale ma friendly
 - Presenta i dati in modo strutturato e leggibile
 - Evidenzia informazioni chiave (kg predetti, periodo)
-- Se ci sono più predizioni, raggruppale in modo logico
+- Se ci sono dati Google Trends, integra insights su tendenze di mercato e stagionalità
+- Se ci sono informazioni da documenti aziendali, integrale nel contesto
+- Collega trends e info documenti alle predizioni quando pertinente
 - Se una predizione viene dal CSV (dati storici), menzionalo
 - Se una predizione è stata generata al momento, menzionalo
-- Aggiungi insights se appropriato (trend, confronti)
-- Usa emoji occasionalmente per rendere più leggibile (📊 📈 ✅)
+- Aggiungi insights strategici quando appropriato
+- Usa emoji occasionalmente per rendere più leggibile (📊 📈 🔍 📚 ✅)
+- Se citi documenti, menziona le fonti
 """
 
-            user_prompt = f"""Ecco i risultati delle predizioni richieste:
+            # Costruisci prompt utente
+            user_parts = [f"""Ecco i risultati delle predizioni richieste:
 
-{contesto}
+{contesto_predizioni}"""]
 
-Per favore, genera una risposta chiara e professionale che presenti questi dati all'utente."""
+            if contesto_trends:
+                user_parts.append(f"\n{contesto_trends}")
+            
+            if contesto_rag:
+                user_parts.append(contesto_rag)
+                if rag_data.get('sources'):
+                    user_parts.append(f"\nFonti documenti: {', '.join(rag_data['sources'])}")
+            
+            if contesto_trends or contesto_rag:
+                user_parts.append("\nPer favore, genera una risposta completa che integri predizioni, trends (se disponibili) e informazioni dai documenti (se disponibili), fornendo insights utili.")
+            else:
+                user_parts.append("\nPer favore, genera una risposta chiara e professionale che presenti questi dati all'utente.")
+            
+            user_prompt = "\n".join(user_parts)
 
             response = self.client.chat.completions.create(
                 model=self.model,
