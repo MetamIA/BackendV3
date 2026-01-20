@@ -22,13 +22,14 @@ from modules.prediction_manager_enhanced import PredictionManagerEnhanced
 from modules.name_code_mapper import NameCodeMapper
 from modules.trends_analyzer import TrendsAnalyzer
 from modules.rag_system import RAGSystem
+from modules.statistics_agent import StatisticsAgent
 from openai import OpenAI
 
 app = Flask(__name__)
 CORS(app)
 
 print("\n" + "="*60)
-print("🚀 SISTEMA COMPLETO - TUTTI I MODULI")
+print("🚀 SISTEMA COMPLETO - CONVERSATIONAL STATISTICS")
 print("="*60)
 
 if not OPENAI_API_KEY:
@@ -44,6 +45,14 @@ try:
     
     prediction_manager = PredictionManagerEnhanced()
     print("✅ Prediction Manager Enhanced inizializzato")
+    
+    # Statistics Agent (nuovo!)
+    try:
+        statistics_agent = StatisticsAgent()
+        print("✅ Statistics Agent inizializzato (LLM conversazionale)")
+    except Exception as e:
+        print(f"⚠️  Statistics Agent non disponibile: {e}")
+        statistics_agent = None
     
     # Trends Analyzer (con CSV per descrizioni prodotti)
     try:
@@ -86,6 +95,7 @@ print("="*60 + "\n")
 @app.route('/api/chat', methods=['POST'])
 def chat():
     """Endpoint principale con entity extraction GPT"""
+    
     try:
         data = request.json
         user_message_original = data.get('message', '').strip()
@@ -114,11 +124,58 @@ def chat():
                 'session_id': session_id
             }
         
-        # Prediction
+        # Prediction o Multi-module
         elif plan['tipo_richiesta'] in ['prediction', 'multi_module']:
             
             results = {}
             
+            # TRENDS MODULE
+            if plan['moduli'].get('trends', {}).get('attivo'):
+                trends_module = plan['moduli']['trends']
+                trends_input = trends_module.get('input', {})
+                
+                print(f"\n📈 Esecuzione: Trends Analysis")
+                
+                # Traduci prodotti
+                if plan.get('entita', {}).get('prodotti'):
+                    prodotti_codici = []
+                    for prod_name in plan['entita']['prodotti']:
+                        code_exact = None
+                        for full_name_lower in name_mapper.product_names_lower:
+                            if prod_name.lower() in full_name_lower:
+                                full_name = name_mapper.product_names[name_mapper.product_names_lower.index(full_name_lower)]
+                                code_exact = name_mapper.product_name_to_code.get(full_name_lower)
+                                print(f"   ✓ Prodotto: '{prod_name}' → '{full_name}' (codice {code_exact})")
+                                break
+                        
+                        if code_exact:
+                            prodotti_codici.append(code_exact)
+                    
+                    if prodotti_codici:
+                        trends_input['prodotti'] = prodotti_codici
+                
+                # Esegui trends
+                if trends_analyzer:
+                    prodotti = trends_input.get('prodotti', [])
+                    periodo = trends_input.get('periodo', {'mese': 1, 'anno': 2024})
+                    
+                    trends_results = trends_analyzer.analyze_products_trends(prodotti, periodo)
+                    
+                    results['trends'] = {
+                        'operazione': 'trends_analysis',
+                        'risultati': [{
+                            'formatted_trends': trends_analyzer.format_trends_for_llm(trends_results)
+                        }],
+                        'num_risultati': 1
+                    }
+                else:
+                    results['trends'] = {
+                        'operazione': 'trends_analysis',
+                        'risultati': [{'messaggio': 'Trends Analyzer non disponibile'}],
+                        'num_risultati': 1
+                    }
+            
+            # PREDICTION MODULE
             if plan['moduli'].get('prediction', {}).get('attivo'):
                 pred_module = plan['moduli']['prediction']
                 operazione = pred_module.get('operazione', 'predizione_singola')
@@ -230,10 +287,61 @@ def chat():
                         }
                 
                 else:
-                    # Operazioni predizione standard
-                    pred_results = prediction_manager.execute_operation(
-                        operazione, input_data
-                    )
+                    # Operazioni statistiche o predizioni
+                    
+                    # Determina se è statistica (passato) o predizione (futuro)
+                    is_statistics = operazione in ['somma', 'media', 'mediana', 'aggregazione_clienti']
+                    
+                    if is_statistics and statistics_agent:
+                        # USA STATISTICS AGENT (LLM conversazionale)
+                        # Passa la query ORIGINALE direttamente all'agent
+                        # L'agent farà domande se necessario
+                        
+                        print(f"\n💬 Statistics Agent conversazionale")
+                        print(f"   → Query originale passata all'agent")
+                        
+                        # Chiamata agent con query originale
+                        agent_result = statistics_agent.query_statistics(
+                            user_message_original,
+                            conversation_history
+                        )
+                        
+                        # Controlla se l'agent sta chiedendo chiarimenti
+                        if agent_result.get('needs_clarification'):
+                            # L'agent ha fatto una domanda!
+                            response_data = {
+                                'tipo': 'clarification',
+                                'risposta': agent_result['risposta'],
+                                'question': agent_result.get('question'),
+                                'suggestions': agent_result.get('suggestions', []),
+                                'session_id': session_id
+                            }
+                            
+                            # Salva in memoria
+                            conversation_manager.add_message(session_id, 'user', user_message_original)
+                            conversation_manager.add_message(session_id, 'assistant', agent_result['risposta'])
+                            
+                            print(f"✅ Agent ha chiesto chiarimenti")
+                            return jsonify(response_data)
+                        
+                        # Altrimenti ha una risposta finale
+                        pred_results = {
+                            'operazione': operazione,
+                            'risultati': [{
+                                'risposta_agent': agent_result['risposta'],
+                                'tool_calls': agent_result['tool_calls'],
+                                'iterations': agent_result.get('iterations', 0)
+                            }],
+                            'num_risultati': 1,
+                            'agent_mode': True
+                        }
+                    
+                    else:
+                        # USA PREDICTION MANAGER (pandas + ML)
+                        print(f"\n📊 Predizioni ML: {operazione}")
+                        pred_results = prediction_manager.execute_operation(
+                            operazione, input_data
+                        )
                 
                 print(f"✅ Risultati: {pred_results.get('num_risultati', 0)} risultati")
                 
@@ -243,7 +351,7 @@ def chat():
                 results['prediction'] = pred_results
             
             # COSTRUZIONE RISPOSTA DETERMINISTICA
-            risposta_finale = build_deterministic_response(
+            risposta_finale = build_multi_module_response(
                 plan,
                 results
             )
@@ -252,8 +360,8 @@ def chat():
                 'tipo': 'prediction',
                 'risposta': risposta_finale,
                 'session_id': session_id,
-                'operazione': plan['moduli'].get('prediction', {}).get('operazione'),
-                'dati': results.get('prediction', {})
+                'operazione': 'multi_module' if len(results) > 1 else plan['moduli'].get('prediction', {}).get('operazione'),
+                'dati': results
             }
         
         else:
@@ -282,6 +390,67 @@ def chat():
         return jsonify({'tipo': 'error', 'error': str(e)}), 500
 
 
+def build_multi_module_response(plan: dict, results: dict) -> str:
+    """Costruisce risposta per richieste multi-modulo"""
+    
+    risposte_moduli = []
+    
+    # TRENDS
+    if 'trends' in results and results['trends'].get('risultati'):
+        trends_resp = build_trends_analysis_response(results['trends']['risultati'])
+        risposte_moduli.append(trends_resp)
+    
+    # PREDICTION
+    if 'prediction' in results and results['prediction'].get('risultati'):
+        pred_data = results['prediction']
+        
+        # Controlla se è risposta da Statistics Agent
+        if pred_data.get('agent_mode'):
+            # Agent ha già generato risposta naturale
+            risultati = pred_data['risultati']
+            if risultati and 'risposta_agent' in risultati[0]:
+                agent_resp = risultati[0]['risposta_agent']
+                iterations = risultati[0].get('iterations', 0)
+                
+                resp = f"📊 Analisi Dati\n\n{agent_resp}"
+                if iterations > 1:
+                    resp += f"\n\n🔍 (Analisi completata in {iterations} iterazioni)"
+                
+                risposte_moduli.append(resp)
+        else:
+            # Risposta da Prediction Manager (template standard)
+            operazione = pred_data.get('operazione', 'unknown')
+            risultati = pred_data['risultati']
+            
+            if operazione == 'predizione_singola':
+                pred_resp = build_predizione_singola_response(risultati)
+            elif operazione == 'somma':
+                pred_resp = build_somma_response(risultati)
+            elif operazione == 'media':
+                pred_resp = build_media_response(risultati)
+            elif operazione == 'mediana':
+                pred_resp = build_mediana_response(risultati)
+            elif operazione == 'aggregazione_clienti':
+                pred_resp = build_aggregazione_clienti_response(risultati)
+            else:
+                pred_resp = build_generic_response(risultati, operazione)
+            
+            risposte_moduli.append(pred_resp)
+    
+    # RAG
+    if 'rag' in results and results['rag'].get('risultati'):
+        rag_resp = build_rag_response(results['rag']['risultati'])
+        risposte_moduli.append(rag_resp)
+    
+    # Concatena con separatore
+    if len(risposte_moduli) > 1:
+        return "\n\n" + "="*50 + "\n\n".join(risposte_moduli)
+    elif len(risposte_moduli) == 1:
+        return risposte_moduli[0]
+    else:
+        return "Non ho trovato dati per questa richiesta."
+
+
 def build_deterministic_response(plan: dict, results: dict) -> str:
     """Costruisce risposta DETERMINISTICA con template Python"""
     
@@ -289,6 +458,21 @@ def build_deterministic_response(plan: dict, results: dict) -> str:
         return "Non ho trovato dati per questa richiesta. Verifica prodotto e periodo."
     
     pred_data = results['prediction']
+    
+    # Controlla se è risposta da Statistics Agent
+    if pred_data.get('agent_mode'):
+        risultati = pred_data['risultati']
+        if risultati and 'risposta_agent' in risultati[0]:
+            agent_resp = risultati[0]['risposta_agent']
+            iterations = risultati[0].get('iterations', 0)
+            
+            resp = f"📊 Analisi Dati\n\n{agent_resp}"
+            if iterations > 1:
+                resp += f"\n\n🔍 (Analisi completata in {iterations} iterazioni)"
+            
+            return resp
+    
+    # Altrimenti usa template standard
     operazione = pred_data.get('operazione', 'unknown')
     risultati = pred_data['risultati']
     
