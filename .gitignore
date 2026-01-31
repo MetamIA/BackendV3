@@ -15,6 +15,11 @@ __pycache__/
 .env
 .env.local
 
+# Chroma / RAG vector stores
+data/csv_chroma_db/
+data/**/chroma.sqlite3
+data/**/*.bin
+
 
 # Backup / legacy
 *_old*.py
