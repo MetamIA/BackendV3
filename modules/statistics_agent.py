@@ -1,6 +1,6 @@
 """
-Statistics Agent - Conversational CSV analysis with tool calling
-L'LLM vede prodotti/clienti unici e usa tool per interrogare iterativamente il CSV
+Statistics Agent - Conversational CSV analysis with RAG
+L'LLM usa RAG per interrogare semanticamente il CSV
 """
 
 import pandas as pd
@@ -12,61 +12,60 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.config import OPENAI_API_KEY, OPENAI_MODEL_QUERY, PREDICTIONS_CSV
+from modules.csv_rag_indexer import CSVRAGIndexer
 
 
 class StatisticsAgent:
     """
-    Agent conversazionale per statistiche CSV
-    L'LLM usa tool functions per interrogare iterativamente il CSV
+    Agent conversazionale per statistiche CSV con RAG
+    L'LLM usa retrieval semantico per interrogare il CSV
     """
-    
-    COL_PRODOTTO = 'Prodotto'  # Codice numerico
-    COL_CLIENTE = 'Cliente'    # Codice numerico
-    COL_PERIODO = 'Periodo'
-    COL_ESERCIZIO = 'Esercizio'
-    COL_KG = 'Kg_Venduti_Predetti'
-    COL_DESC_PRODOTTO = 'Descrizione_Prodotto'  # Nome leggibile
-    COL_DESC_CLIENTE = 'Descrizione_Cliente'    # Nome leggibile
     
     def __init__(
         self,
         csv_path: str = str(PREDICTIONS_CSV),
-        api_key: str = OPENAI_API_KEY
+        api_key: str = OPENAI_API_KEY,
+        use_rag: bool = True
     ):
         """Inizializza agent"""
         self.csv_path = csv_path
         self.client = OpenAI(api_key=api_key)
         self.model = OPENAI_MODEL_QUERY  # gpt-4o-mini
+        self.use_rag = use_rag
         
-        # Carica CSV
+        # Carica CSV (per fallback e statistiche)
         self.df = None
-        self.unique_products = []
-        self.unique_clients = []
         self._load_csv()
+        
+        # Inizializza CSV RAG
+        if use_rag:
+            try:
+                self.rag_indexer = CSVRAGIndexer(csv_path=csv_path)
+                
+                if self.rag_indexer.available:
+                    # Indicizza se necessario
+                    self.rag_indexer.index_csv()
+                    print(f"✅ Statistics Agent con CSV RAG")
+                    print(f"   Chunks indicizzati: {self.rag_indexer.collection.count()}")
+                else:
+                    print("⚠️  CSV RAG non disponibile, uso query pandas")
+                    self.use_rag = False
+                    self.rag_indexer = None
+            except Exception as e:
+                print(f"⚠️  Errore inizializzazione CSV RAG: {e}")
+                print("   Fallback a query pandas")
+                self.use_rag = False
+                self.rag_indexer = None
+        else:
+            self.rag_indexer = None
+            print("✅ Statistics Agent (pandas queries)")
     
     def _load_csv(self):
-        """Carica CSV ed estrae valori unici"""
+        """Carica CSV per fallback"""
         try:
             if os.path.exists(self.csv_path):
                 self.df = pd.read_csv(self.csv_path)
-                
-                # Estrai NOMI leggibili (non codici)
-                if self.COL_DESC_PRODOTTO in self.df.columns:
-                    self.unique_products = sorted(self.df[self.COL_DESC_PRODOTTO].dropna().unique().tolist())
-                else:
-                    print(f"   ⚠️  Colonna {self.COL_DESC_PRODOTTO} non trovata")
-                    self.unique_products = []
-                
-                if self.COL_DESC_CLIENTE in self.df.columns:
-                    self.unique_clients = sorted(self.df[self.COL_DESC_CLIENTE].dropna().unique().tolist())
-                else:
-                    print(f"   ⚠️  Colonna {self.COL_DESC_CLIENTE} non trovata")
-                    self.unique_clients = []
-                
-                print(f"✅ Statistics Agent inizializzato")
                 print(f"   - {len(self.df)} righe CSV")
-                print(f"   - {len(self.unique_products)} prodotti unici")
-                print(f"   - {len(self.unique_clients)} clienti unici")
             else:
                 print(f"❌ CSV non trovato: {self.csv_path}")
                 self.df = pd.DataFrame()
@@ -108,49 +107,35 @@ class StatisticsAgent:
             {
                 "type": "function",
                 "function": {
-                    "name": "query_csv_data",
-                    "description": "Interroga il CSV per recuperare dati filtrati. USA SOLO quando sei SICURO di prodotto/cliente/periodo. Se non sei sicuro, CHIEDI chiarimenti all'utente.",
+                    "name": "search_csv_semantic",
+                    "description": """Cerca nel CSV usando query semantica naturale. Ritorna TUTTE le righe rilevanti (max 200).
+                    
+Il CSV contiene queste colonne:
+- Prodotto, Descrizione_Prodotto (nome prodotto)
+- Cliente, Descrizione_Cliente (nome cliente)
+- Esercizio (anno), Periodo (mese 1-12)
+- Kg_Venduti_Predetti (kg venduti)
+- Ricavo_Netto (€)
+- Sconto_Merce, Sconto_Canale, Sconto_Valore (€)
+- Cluster_Prodotto_Label, Cluster_Cliente_Label
+
+IMPORTANTE: Il sistema recupera automaticamente TUTTE le righe rilevanti per garantire calcoli consistenti.
+
+Puoi fare query complesse tipo:
+- "prodotti con sconto merce maggiore di 10 euro"
+- "vendite osvego gennaio 2024"
+- "clienti nel cluster rank 3"
+- "ricavi netti maggiori di 100 euro"
+""",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "prodotto_nome_contiene": {
+                            "query": {
                                 "type": "string",
-                                "description": "Cerca prodotti il cui nome CONTIENE questa stringa (es. 'Osvego')"
-                            },
-                            "cliente_nome_contiene": {
-                                "type": "string",
-                                "description": "Cerca clienti il cui nome CONTIENE questa stringa"
-                            },
-                            "periodo_mese": {
-                                "type": "integer",
-                                "description": "Mese specifico (1-12). USA SOLO se utente ha specificato mese."
-                            },
-                            "periodo_anno": {
-                                "type": "integer",
-                                "description": "Anno. USA SOLO se utente ha specificato anno o è implicito."
-                            },
-                            "periodo_da_mese": {
-                                "type": "integer",
-                                "description": "Range: mese inizio (1-12)"
-                            },
-                            "periodo_da_anno": {
-                                "type": "integer",
-                                "description": "Range: anno inizio"
-                            },
-                            "periodo_a_mese": {
-                                "type": "integer",
-                                "description": "Range: mese fine (1-12)"
-                            },
-                            "periodo_a_anno": {
-                                "type": "integer",
-                                "description": "Range: anno fine"
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Massimo numero righe da ritornare (default 100, max 500)"
+                                "description": "Query semantica naturale (es. 'vendite Osvego 3500 anno 2024')"
                             }
                         },
-                        "required": []
+                        "required": ["query"]
                     }
                 }
             },
@@ -158,14 +143,19 @@ class StatisticsAgent:
                 "type": "function",
                 "function": {
                     "name": "calculate_aggregate",
-                    "description": "Calcola aggregazione (somma, media, count) su dati recuperati. Calcola sempre su colonna Kg_Venduti_Predetti.",
+                    "description": "Calcola aggregazione (somma, media, count) su risultati recuperati tramite search_csv_semantic",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "operation": {
                                 "type": "string",
                                 "enum": ["sum", "mean", "median", "count", "min", "max"],
-                                "description": "Operazione di aggregazione da calcolare sui kg venduti"
+                                "description": "Operazione di aggregazione"
+                            },
+                            "field": {
+                                "type": "string",
+                                "enum": ["kg_venduti", "ricavo_netto", "sconto_merce"],
+                                "description": "Campo su cui calcolare (default: kg_venduti)"
                             }
                         },
                         "required": ["operation"]
@@ -187,7 +177,7 @@ class StatisticsAgent:
                             "suggestions": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Opzionale: suggerimenti per l'utente (es. lista prodotti simili)"
+                                "description": "Opzionale: suggerimenti per l'utente"
                             }
                         },
                         "required": ["question"]
@@ -196,42 +186,45 @@ class StatisticsAgent:
             }
         ]
         
-        # System prompt con prodotti/clienti
+        # System prompt
         system_prompt = f"""Sei un assistente conversazionale per analisi vendite.
 
-HAI ACCESSO A:
-- CSV con {len(self.df)} righe di vendite
-- {len(self.unique_products)} prodotti unici
-- {len(self.unique_clients)} clienti unici
+HAI ACCESSO COMPLETO AL CSV con {len(self.df) if self.df is not None else 0} righe tramite retrieval semantico (RAG).
 
-PRODOTTI DISPONIBILI (campione):
-{json.dumps(self.unique_products[:30], ensure_ascii=False)}
-
-CLIENTI DISPONIBILI (campione):
-{json.dumps(self.unique_clients[:30], ensure_ascii=False)}
+COLONNE DISPONIBILI:
+- Prodotto, Descrizione_Prodotto (nome)
+- Cliente, Descrizione_Cliente (nome)
+- Esercizio (anno), Periodo (mese 1-12)
+- Kg_Venduti_Predetti (kg venduti)
+- Ricavo_Netto (ricavi in €)
+- Sconto_Merce, Sconto_Canale, Sconto_Valore (sconti in €)
+- Cluster_Prodotto_Label, Cluster_Cliente_Label
 
 COMPORTAMENTO:
 
 1. **PRIMA DI TUTTO**: Valuta se hai TUTTE le informazioni necessarie
-   - Prodotto: chiaro? Ci sono varianti (es. "Osvego 500g" vs "Osvego 3500")?
-   - Periodo: specificato? "2024" significa tutto l'anno o un mese?
-   - Cliente: specificato o tutti?
+   - Se manca qualcosa o sei incerto: USA ask_clarification
 
-2. **SE MANCA QUALCOSA O SEI INCERTO**:
-   - USA ask_clarification per chiedere all'utente
-   - Fornisci suggerimenti basati su prodotti/clienti disponibili
-   - Esempio: "Ho trovato 2 prodotti Osvego: 'Osvego 500g' e 'Osvego 3500'. Quale ti interessa?"
+2. **QUANDO HAI CONFIDENZA**:
+   - USA search_csv_semantic con query naturale
+   - **CRITICO: Per TOTALI/MEDIE/SOMME:**
+     - Se search_csv_semantic ritorna summary.kg_totale → USALO direttamente
+     - Oppure chiama calculate_aggregate per calcolare su metadata
+   - NON guardare solo i documents (sono solo 10 esempi)
+   - I calcoli vanno fatti su TUTTI i metadata (fino a 200 righe)
 
-3. **SOLO QUANDO HAI CONFIDENZA**:
-   - USA query_csv_data per recuperare dati
-   - USA calculate_aggregate per calcolare statistiche
-   - Dai risposta finale
+3. **QUERY COMPLESSE** che puoi fare:
+   - "prodotti con sconto merce > 10 euro"
+   - "clienti nel cluster rank 3"
+   - "ricavi netti maggiori di 100 euro nel 2024"
+   - "vendite con alto sconto canale"
 
 REGOLE CRITICHE:
 - NON fare assunzioni su prodotti/periodi/clienti
 - CHIEDI SEMPRE se c'è ambiguità
 - USA I TOOL solo quando sei SICURO al 100%
 - NON inventare MAI numeri - usa SOLO dati dal CSV
+- Le query semantiche trovano automaticamente righe rilevanti
 
 ESEMPI:
 
@@ -242,10 +235,13 @@ Risposta: [USA ask_clarification] "Ho trovato 2 prodotti Osvego nel sistema:
 Quale ti interessa? E per quale periodo?"
 
 Query: "vendite Osvego 3500 nel 2024"
-Risposta: [USA query_csv_data] poi calcola e rispondi
+Risposta: [USA search_csv_semantic("vendite Osvego 3500 anno 2024")] 
+poi [USA calculate_aggregate("sum")] 
+poi rispondi con totale
 
-Query: "totale Q1"
-Risposta: [USA ask_clarification] "Per quale prodotto vuoi il totale del Q1 2024?"
+Query: "prodotti con ricavo netto alto nel Q1"
+Risposta: [USA search_csv_semantic("prodotti ricavo netto alto Q1 2024")]
+poi analizza risultati e rispondi
 """
 
         # Messages
@@ -272,7 +268,7 @@ Risposta: [USA ask_clarification] "Per quale prodotto vuoi il totale del Q1 2024
                 model=self.model,
                 messages=messages,
                 tools=tools,
-                temperature=0.2
+                temperature=0.0  # ← ZERO per determinismo completo
             )
             
             message = response.choices[0].message
@@ -301,13 +297,13 @@ Risposta: [USA ask_clarification] "Per quale prodotto vuoi il totale del Q1 2024
                 print(f"   📋 Args: {json.dumps(arguments, ensure_ascii=False)[:200]}")
                 
                 # Esegui funzione
-                if function_name == "query_csv_data":
-                    result = self._query_csv_data(**arguments)
+                if function_name == "search_csv_semantic":
+                    result = self._search_csv_semantic(**arguments)
                     last_data = result
                     
                 elif function_name == "calculate_aggregate":
                     if not last_data:
-                        result = {"error": "Nessun dato disponibile. Usa prima query_csv_data."}
+                        result = {"error": "Nessun dato disponibile. Usa prima search_csv_semantic."}
                     else:
                         result = self._calculate_aggregate(last_data, **arguments)
                 
@@ -362,128 +358,147 @@ Risposta: [USA ask_clarification] "Per quale prodotto vuoi il totale del Q1 2024
             'iterations': iteration
         }
     
-    def _query_csv_data(
+    def _search_csv_semantic(
         self,
-        prodotto_codice: str = None,
-        prodotto_nome_contiene: str = None,
-        cliente_codice: str = None,
-        cliente_nome_contiene: str = None,
-        periodo_mese: int = None,
-        periodo_anno: int = None,
-        periodo_da_mese: int = None,
-        periodo_da_anno: int = None,
-        periodo_a_mese: int = None,
-        periodo_a_anno: int = None,
-        limit: int = 100
+        query: str
     ) -> Dict:
-        """Tool function: query CSV con filtri"""
+        """Tool function: search semantico con RAG (SEMPRE 200 risultati per consistenza)"""
         
-        df = self.df.copy()
-        
-        # Filtri prodotto
-        if prodotto_codice:
-            # Cerca per codice esatto
-            df = df[df[self.COL_PRODOTTO].astype(str) == str(prodotto_codice)]
-        elif prodotto_nome_contiene:
-            # Cerca per NOME nella colonna Descrizione_Prodotto
-            if self.COL_DESC_PRODOTTO in df.columns:
-                df = df[df[self.COL_DESC_PRODOTTO].astype(str).str.contains(prodotto_nome_contiene, case=False, na=False)]
-            else:
-                # Fallback: cerca nel codice
-                df = df[df[self.COL_PRODOTTO].astype(str).str.contains(prodotto_nome_contiene, case=False, na=False)]
-        
-        # Filtri cliente
-        if cliente_codice:
-            # Cerca per codice esatto
-            df = df[df[self.COL_CLIENTE].astype(str) == str(cliente_codice)]
-        elif cliente_nome_contiene:
-            # Cerca per NOME nella colonna Descrizione_Cliente
-            if self.COL_DESC_CLIENTE in df.columns:
-                df = df[df[self.COL_DESC_CLIENTE].astype(str).str.contains(cliente_nome_contiene, case=False, na=False)]
-            else:
-                # Fallback: cerca nel codice
-                df = df[df[self.COL_CLIENTE].astype(str).str.contains(cliente_nome_contiene, case=False, na=False)]
-        
-        # Filtri periodo
-        if periodo_mese and periodo_anno:
-            df = df[(df[self.COL_PERIODO] == periodo_mese) & (df[self.COL_ESERCIZIO] == periodo_anno)]
-        elif periodo_anno and not periodo_mese:
-            # Solo anno specificato → tutto l'anno
-            df = df[df[self.COL_ESERCIZIO] == periodo_anno]
-        elif periodo_da_mese and periodo_da_anno and periodo_a_mese and periodo_a_anno:
-            # Range periodo
-            df = df[
-                ((df[self.COL_ESERCIZIO] > periodo_da_anno) | 
-                 ((df[self.COL_ESERCIZIO] == periodo_da_anno) & (df[self.COL_PERIODO] >= periodo_da_mese))) &
-                ((df[self.COL_ESERCIZIO] < periodo_a_anno) | 
-                 ((df[self.COL_ESERCIZIO] == periodo_a_anno) & (df[self.COL_PERIODO] <= periodo_a_mese)))
-            ]
-        
-        # Limit
-        df = df.head(min(limit, 500))
-        
-        # Ritorna dati
-        if df.empty:
+        if not self.use_rag or not self.rag_indexer:
             return {
-                'num_rows': 0,
-                'message': 'Nessun dato trovato con questi filtri'
+                'error': 'RAG non disponibile. Installa: pip install chromadb sentence-transformers',
+                'num_results': 0
             }
         
-        return {
-            'num_rows': len(df),
-            'columns': df.columns.tolist(),
-            'data': df.to_dict(orient='records')[:limit],
-            'summary': {
-                'kg_totali': float(df[self.COL_KG].sum()),
-                'kg_media': float(df[self.COL_KG].mean()),
-                'num_clienti_unici': int(df[self.COL_CLIENTE].nunique()),
-                'num_prodotti_unici': int(df[self.COL_PRODOTTO].nunique())
+        try:
+            # Estrai filtri anno/periodo dalla query (se presenti)
+            filters = self._extract_filters_from_query(query)
+            
+            # Query semantica - FISSO 200 risultati per consistenza matematica
+            results = self.rag_indexer.search(
+                query=query,
+                n_results=200,  # Fisso per garantire sempre stesso dataset
+                filters=filters  # Filtri metadata
+            )
+            
+            if not results['metadatas'] or not results['metadatas'][0]:
+                return {
+                    'num_results': 0,
+                    'message': 'Nessun risultato trovato per questa query'
+                }
+            
+            metadatas = results['metadatas'][0]
+            documents = results['documents'][0]
+            
+            # Statistiche sui risultati
+            kg_totale = sum(m.get('kg_venduti', 0) for m in metadatas)
+            ricavo_totale = sum(m.get('ricavo_netto', 0) for m in metadatas)
+            
+            return {
+                'num_results': len(metadatas),
+                'metadatas': metadatas,
+                'documents': documents[:10],  # Prime 10 per log
+                'filters_applied': filters,  # Mostra quali filtri sono stati applicati
+                'summary': {
+                    'kg_totale': float(kg_totale),
+                    'ricavo_totale': float(ricavo_totale),
+                    'prodotti_unici': len(set(m.get('prodotto_nome', '') for m in metadatas)),
+                    'clienti_unici': len(set(m.get('cliente_nome', '') for m in metadatas))
+                }
             }
+            
+        except Exception as e:
+            return {
+                'error': f'Errore search RAG: {str(e)}',
+                'num_results': 0
+            }
+    
+    def _extract_filters_from_query(self, query: str) -> Dict:
+        """Estrae filtri anno/periodo dalla query per ChromaDB where clause"""
+        import re
+        
+        query_lower = query.lower()
+        conditions = []
+        
+        # Estrai anno (2024, 2025, 2026, etc.)
+        year_match = re.search(r'\b(202[0-9])\b', query)
+        if year_match:
+            conditions.append({"esercizio": {"$eq": int(year_match.group(1))}})
+        
+        # Estrai mese (gennaio, febbraio, ..., o numeri 1-12)
+        mesi = {
+            'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4,
+            'maggio': 5, 'giugno': 6, 'luglio': 7, 'agosto': 8,
+            'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12
         }
+        
+        for mese_nome, mese_num in mesi.items():
+            if mese_nome in query_lower:
+                conditions.append({"periodo": {"$eq": mese_num}})
+                break
+        
+        # Costruisci where clause ChromaDB
+        if len(conditions) == 0:
+            return None
+        elif len(conditions) == 1:
+            return conditions[0]
+        else:
+            # Multiple conditions → $and
+            return {"$and": conditions}
     
     def _calculate_aggregate(
         self,
         data: Dict,
         operation: str,
-        column: str = None
+        field: str = 'kg_venduti'
     ) -> Dict:
-        """Tool function: calcola aggregazione su dati"""
+        """Tool function: calcola aggregazione su risultati RAG"""
         
-        if not data or 'data' not in data:
-            return {'error': 'Nessun dato disponibile. Usa prima query_csv_data.'}
+        if not data or 'metadatas' not in data:
+            return {'error': 'Nessun dato disponibile. Usa prima search_csv_semantic.'}
         
-        # Default column
-        if not column:
-            column = self.COL_KG
+        metadatas = data['metadatas']
         
-        # Ricostruisci DataFrame
-        df = pd.DataFrame(data['data'])
+        if not metadatas:
+            return {'error': 'Nessun risultato da aggregare'}
         
-        if column not in df.columns:
-            return {'error': f'Colonna {column} non trovata'}
-        
-        # Calcola aggregazione semplice
-        if operation == 'sum':
-            value = float(df[column].sum())
-        elif operation == 'mean':
-            value = float(df[column].mean())
-        elif operation == 'median':
-            value = float(df[column].median())
-        elif operation == 'count':
-            value = int(df[column].count())
-        elif operation == 'min':
-            value = float(df[column].min())
-        elif operation == 'max':
-            value = float(df[column].max())
-        else:
-            return {'error': f'Operazione {operation} non supportata'}
-        
-        return {
-            'operation': operation,
-            'column': column,
-            'value': value,
-            'num_rows_analyzed': len(df)
-        }
+        # Estrai valori
+        try:
+            values = [m.get(field, 0) for m in metadatas if m.get(field) is not None]
+            
+            if not values:
+                return {'error': f'Campo {field} non trovato nei risultati'}
+            
+            # Calcola aggregazione
+            if operation == 'sum':
+                value = float(sum(values))
+            elif operation == 'mean':
+                value = float(sum(values) / len(values))
+            elif operation == 'median':
+                sorted_vals = sorted(values)
+                n = len(sorted_vals)
+                if n % 2 == 0:
+                    value = float((sorted_vals[n//2 - 1] + sorted_vals[n//2]) / 2)
+                else:
+                    value = float(sorted_vals[n//2])
+            elif operation == 'count':
+                value = int(len(values))
+            elif operation == 'min':
+                value = float(min(values))
+            elif operation == 'max':
+                value = float(max(values))
+            else:
+                return {'error': f'Operazione {operation} non supportata'}
+            
+            return {
+                'operation': operation,
+                'field': field,
+                'value': value,
+                'num_rows_analyzed': len(metadatas)
+            }
+            
+        except Exception as e:
+            return {'error': f'Errore calcolo: {str(e)}'}
 
 
 if __name__ == "__main__":

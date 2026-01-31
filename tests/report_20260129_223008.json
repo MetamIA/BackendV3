@@ -1,0 +1,298 @@
+{
+  "timestamp": "2026-01-29T22:30:08.171252",
+  "summary": {
+    "total": 12,
+    "passed": 11,
+    "failed": 1,
+    "success_rate": 91.66666666666666
+  },
+  "results": [
+    {
+      "test_name": "Query ambigua - Osvego generico",
+      "query": "vendite osvego",
+      "risposta": "Ho trovato 2 prodotti Osvego nel sistema:\n- Osvego 500g\n- Osvego 3500 - 14pz x 250g\nQuale ti interessa? E per quale periodo?",
+      "passed": true,
+      "errors": [],
+      "elapsed": 1.774716854095459,
+      "iterations": 1,
+      "needs_clarification": true,
+      "extracted_numbers": [
+        2.0,
+        2.0,
+        3500.0
+      ],
+      "tool_calls_count": 0
+    },
+    {
+      "test_name": "Query specifica - Osvego 3500 nel 2024",
+      "query": "totale kg venduti di Osvego 3500 nel 2024",
+      "risposta": "Il totale dei kg venduti di \"Osvego 3500 - 14pz x 250g\" nel 2024 \u00e8 di **82,145.89 kg**.",
+      "passed": true,
+      "errors": [],
+      "elapsed": 6.539646148681641,
+      "iterations": 2,
+      "needs_clarification": false,
+      "extracted_numbers": [
+        82145.89,
+        3500.0,
+        2024.0,
+        82.0,
+        145.89
+      ],
+      "tool_calls_count": 1
+    },
+    {
+      "test_name": "Query periodo - gennaio 2024",
+      "query": "vendite Osvego 3500 a gennaio 2024",
+      "risposta": "Nel mese di gennaio 2024, le vendite del prodotto \"Osvego 3500 - 14pz x 250g\" hanno generato:\n\n- **Kg venduti totali**: 16,197.05 kg\n- **Ricavo netto totale**: \u20ac82,986.58\n\nSe hai bisogno di ulteriori dettagli o analisi, fammi sapere!",
+      "passed": true,
+      "errors": [],
+      "elapsed": 15.67384648323059,
+      "iterations": 4,
+      "needs_clarification": false,
+      "extracted_numbers": [
+        16197.05,
+        82986.58,
+        2024.0,
+        3500.0,
+        16.0,
+        197.05,
+        82.0,
+        986.58
+      ],
+      "tool_calls_count": 3
+    },
+    {
+      "test_name": "Consistenza totale vendite Osvego 3500 nel 2024 (Consistency)",
+      "query": "quanto ho venduto in totale di Osvego 3500 nel 2024?",
+      "passed": false,
+      "errors": [
+        "\u274c Tentativo 3: numero di valori diverso (8 vs 6)"
+      ],
+      "repetitions": 3,
+      "all_numbers": [
+        [
+          94.0,
+          68.0,
+          2024.0,
+          20628.94,
+          3500.0,
+          104488.68
+        ],
+        [
+          94.0,
+          68.0,
+          2024.0,
+          20628.94,
+          3500.0,
+          104488.68
+        ],
+        [
+          20628.94,
+          104488.68,
+          2024.0,
+          20.0,
+          628.94,
+          3500.0,
+          104.0,
+          488.68
+        ]
+      ]
+    },
+    {
+      "test_name": "Consistenza media vendite (Consistency)",
+      "query": "qual \u00e8 la media kg venduti di Osvego 3500 nel 2024?",
+      "passed": true,
+      "errors": [],
+      "repetitions": 3,
+      "all_numbers": [
+        [
+          176.97,
+          3500.0,
+          2024.0,
+          176.97
+        ],
+        [
+          176.97,
+          3500.0,
+          2024.0,
+          176.97
+        ],
+        [
+          176.97,
+          3500.0,
+          2024.0,
+          176.97
+        ]
+      ]
+    },
+    {
+      "test_name": "Query complessa - Ricavi alti",
+      "query": "quanti prodotti hanno ricavo netto maggiore di 100 euro nel 2024?",
+      "risposta": "Nel 2024, ci sono **10 prodotti** con un ricavo netto maggiore di 100 euro.",
+      "passed": true,
+      "errors": [],
+      "elapsed": 9.74476957321167,
+      "iterations": 2,
+      "needs_clarification": false,
+      "extracted_numbers": [
+        10.0,
+        100.0,
+        2024.0,
+        10.0,
+        100.0
+      ],
+      "tool_calls_count": 1
+    },
+    {
+      "test_name": "Query cluster - Clienti rank 3",
+      "query": "vendite per clienti nel cluster rank 3",
+      "risposta": "Ecco i risultati delle vendite per i clienti nel cluster rank 3:\n\n- **Kg Totali Venduti**: 2380.26 kg\n- **Ricavo Totale**: \u20ac13790.45\n- **Prodotti Unici**: 7\n- **Clienti Unici**: 19\n\nSe hai bisogno di ulteriori dettagli o di un'analisi specifica, fammi sapere!",
+      "passed": true,
+      "errors": [],
+      "elapsed": 10.063505411148071,
+      "iterations": 2,
+      "needs_clarification": false,
+      "extracted_numbers": [
+        3.0,
+        26.0,
+        45.0,
+        7.0,
+        19.0,
+        3.0,
+        2380.26,
+        13790.45,
+        7.0,
+        19.0
+      ],
+      "tool_calls_count": 1
+    },
+    {
+      "test_name": "Query sconti - Sconto merce alto",
+      "query": "prodotti con sconto merce maggiore di 10 euro",
+      "risposta": "Ho trovato un totale di 19 prodotti con uno sconto merce maggiore di 10 euro. Ecco un riepilogo delle vendite:\n\n- **Kg Totali Venduti**: 1110.07 kg\n- **Ricavo Totale**: \u20ac5592.62\n- **Clienti Unici**: 43\n\nSe desideri ulteriori dettagli su specifici prodotti o clienti, fammi sapere!",
+      "passed": true,
+      "errors": [],
+      "elapsed": 15.070498943328857,
+      "iterations": 2,
+      "needs_clarification": false,
+      "extracted_numbers": [
+        19.0,
+        10.0,
+        7.0,
+        62.0,
+        43.0,
+        19.0,
+        10.0,
+        1110.07,
+        5592.62,
+        43.0
+      ],
+      "tool_calls_count": 1
+    },
+    {
+      "test_name": "Conversazione chiarimento prodotto (Conversation)",
+      "passed": true,
+      "errors": [],
+      "turns": 2,
+      "conversation": [
+        {
+          "role": "user",
+          "content": "vendite osvego 2024"
+        },
+        {
+          "role": "assistant",
+          "content": "Ho trovato 2 prodotti Osvego nel sistema:\n- Osvego 500g\n- Osvego 3500 - 14pz x 250g\nQuale ti interessa? E per quale mese del 2024?"
+        },
+        {
+          "role": "user",
+          "content": "Osvego 3500"
+        },
+        {
+          "role": "assistant",
+          "content": "Nel 2024, le vendite del prodotto \"Osvego 3500 - 14pz x 250g\" hanno generato i seguenti risultati:\n\n- **Kg Totali Venduti**: 20,628.94 kg\n- **Ricavo Totale**: \u20ac104,488.68\n- **Prodotti Unici**: 1\n- **Clienti Unici**: 39\n\nSe hai bisogno di ulteriori dettagli o di un'analisi specifica, fammi sapere!"
+        }
+      ]
+    },
+    {
+      "test_name": "Conversazione raffinamento periodo (Conversation)",
+      "passed": true,
+      "errors": [],
+      "turns": 3,
+      "conversation": [
+        {
+          "role": "user",
+          "content": "vendite Osvego 3500"
+        },
+        {
+          "role": "assistant",
+          "content": "Ho trovato 2 prodotti Osvego nel sistema:\n- Osvego 500g\n- Osvego 3500 - 14pz x 250g\nQuale ti interessa? E per quale periodo?"
+        },
+        {
+          "role": "user",
+          "content": "nel 2024"
+        },
+        {
+          "role": "assistant",
+          "content": "Nel 2024, le vendite del prodotto \"Osvego 3500 - 14pz x 250g\" hanno generato i seguenti risultati:\n\n- **Kg Totali Venduti**: 20,628.94 kg\n- **Ricavo Totale**: \u20ac104,488.68\n- **Prodotti Unici**: 1\n- **Clienti Unici**: 39\n\nSe hai bisogno di ulteriori dettagli o di un'analisi specifica, fammi sapere!"
+        },
+        {
+          "role": "user",
+          "content": "solo gennaio"
+        },
+        {
+          "role": "assistant",
+          "content": "Nel mese di gennaio 2024, le vendite del prodotto \"Osvego 3500 - 14pz x 250g\" hanno generato i seguenti risultati:\n\n- **Kg Totali Venduti**: 16,197.05 kg\n- **Ricavo Totale**: \u20ac82,986.58\n- **Prodotti Unici**: 1\n- **Clienti Unici**: 62\n\nSe hai bisogno di ulteriori dettagli o di un'analisi specifica, fammi sapere!"
+        }
+      ]
+    },
+    {
+      "test_name": "Edge case - Prodotto inesistente",
+      "query": "vendite SuperProdottoChiamato12345XYZ nel 2024",
+      "risposta": "Ho trovato un prodotto chiamato 'SuperProdottoChiamato12345XYZ'. Vuoi informazioni su un periodo specifico (mese) nel 2024 o su tutto l'anno?\n\nOpzioni: Tutto il 2024, Gennaio 2024, Febbraio 2024, Marzo 2024, Aprile 2024, Maggio 2024, Giugno 2024, Luglio 2024, Agosto 2024, Settembre 2024, Ottobre 2024, Novembre 2024, Dicembre 2024",
+      "passed": true,
+      "errors": [],
+      "elapsed": 3.518043279647827,
+      "iterations": 1,
+      "needs_clarification": true,
+      "extracted_numbers": [
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0,
+        2024.0
+      ],
+      "tool_calls_count": 0
+    },
+    {
+      "test_name": "Edge case - Periodo futuro",
+      "query": "vendite Osvego 3500 a dicembre 2030",
+      "risposta": "Non ho dati per il 2030. Vuoi che cerchi le vendite di Osvego 3500 per un altro anno?\n\nOpzioni: 2024, 2025, 2026, 2027, 2028, 2029",
+      "passed": true,
+      "errors": [],
+      "elapsed": 2.460930347442627,
+      "iterations": 1,
+      "needs_clarification": true,
+      "extracted_numbers": [
+        2030.0,
+        3500.0,
+        2024.0,
+        2025.0,
+        2026.0,
+        2027.0,
+        2028.0,
+        2029.0
+      ],
+      "tool_calls_count": 0
+    }
+  ]
+}
